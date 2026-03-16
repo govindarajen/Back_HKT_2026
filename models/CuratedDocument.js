@@ -12,11 +12,21 @@ const CuratedDocumentSchema = new mongoose.Schema({
   siret: String,
   nomEntreprise: String,
   fournisseur: String,
+  // structured address for the company/supplier
+  address: {
+    full: String, // full raw address line
+    street: String,
+    postalCode: String,
+    city: String,
+    country: String
+  },
   tva: Number,
   montantHT: Number,
   montantTTC: Number,
   dateEmission: Date,
+  dateEcheance: Date, // date d'échéance / échéance de paiement
   dateExpiration: Date, // pour attestation
+  modePaiement: String, // ex: 'Virement', 'CB', 'Chèque'
   anomalies: [String], // ex: "TVA incohérente", "SIRET différent"
   validated: { type: Boolean, default: false },
   validationDate: Date

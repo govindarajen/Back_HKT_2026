@@ -12,6 +12,8 @@ const RawDocumentSchema = new mongoose.Schema({
     username: String,
     fullName: String
   },
+  // raw extracted address text (optional)
+  extractedAddress: String,
   uploadDate: { type: Date, default: Date.now },
   fileUrl: String, // lien vers le PDF / image sur Atlas 
   metadata: Object,
