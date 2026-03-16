@@ -6,10 +6,6 @@ const groupsSchema = new mongoose.Schema({
     required: true,
     trim: true,
   },
-  hasPage: {
-    type: Boolean,
-    default: false,
-  },
   rights: {
     type: Array,
     default: [

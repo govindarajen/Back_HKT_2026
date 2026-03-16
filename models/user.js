@@ -1,4 +1,8 @@
+const dotenv = require('dotenv');
 const mongoose = require('mongoose');
+
+// Load environment variables
+dotenv.config();
 
 const userSchema = new mongoose.Schema({
   fullName: {
@@ -9,7 +13,7 @@ const userSchema = new mongoose.Schema({
   groupId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'groups',
-    //default: new mongoose.Types.ObjectId('1'),
+    default: new mongoose.Types.ObjectId(process.env.ID_GROUP_DEFAULT),
     required: true,
   },
   username: {
