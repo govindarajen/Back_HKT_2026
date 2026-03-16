@@ -38,12 +38,14 @@ app.options('*', cors());
 // Routes
 const usersRouter = require('./routes/users');
 const groupsRouter = require('./routes/groups')
+const documentsRouter = require('./routes/documents');
 
 
 const basePath = process.env.BASE_PATH || '/api';
 
 app.use( basePath + '/users', usersRouter);
 app.use( basePath + '/groups', groupsRouter);
+app.use( basePath + '/documents', documentsRouter);
 
 // API Test Route
 app.get('/api', (req, res) => {
