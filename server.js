@@ -39,6 +39,9 @@ app.options('*', cors());
 const usersRouter = require('./routes/users');
 const groupsRouter = require('./routes/groups')
 const documentsRouter = require('./routes/documents');
+const enterpriseRouter = require('./routes/enterprise')
+const membershipRequestsRouter = require('./routes/membershipRequests');
+
 
 
 const basePath = process.env.BASE_PATH || '/api';
@@ -46,6 +49,8 @@ const basePath = process.env.BASE_PATH || '/api';
 app.use( basePath + '/users', usersRouter);
 app.use( basePath + '/groups', groupsRouter);
 app.use( basePath + '/documents', documentsRouter);
+app.use( basePath + '/enterprises', enterpriseRouter);
+app.use( basePath + '/membership-requests', membershipRequestsRouter);
 
 // API Test Route
 app.get('/api', (req, res) => {

@@ -106,7 +106,7 @@ async function uploadFile({ file, body, user }) {
 
   const ocrText = await performOcrOnBuffer(file.buffer, file.mimetype);
 
-  const cleanDoc = new CleanDocument({ rawId: rawDoc._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed' });
+  const cleanDoc = new CleanDocument({ rawId: rawDoc._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: res.locals.user.enterpriseId });
   await cleanDoc.save();
 
   rawDoc.status = 'processed';
@@ -148,7 +148,7 @@ async function reprocessRaw(rawId) {
 
   const cleanDoc = await CleanDocument.findOneAndUpdate(
     { rawId: raw._id },
-    { rawId: raw._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed' },
+    { rawId: raw._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: res.locals.user.enterpriseId },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 

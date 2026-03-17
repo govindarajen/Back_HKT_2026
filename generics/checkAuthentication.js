@@ -26,7 +26,8 @@ function checkAuthentication(req, res, next) {
                     { 
                         id: decoded.id, username: decoded.username, 
                         fullName: decoded.fullName,
-                        groupId: decoded.groupId
+                        groupId: decoded.groupId,
+                        enterpriseId: decoded.enterpriseId
                     }, 
                     process.env.JWT_SECRET,
                     { expiresIn: process.env.JWT_EXPIRES_IN } 
@@ -36,7 +37,8 @@ function checkAuthentication(req, res, next) {
                     id: decoded.id,
                     username: decoded.username,
                     fullName: decoded.fullName,
-                    groupId: decoded.groupId
+                    groupId: decoded.groupId,
+                    enterpriseId: decoded.enterpriseId
                 }; // Store user info in res.locals
                 
                 return next();

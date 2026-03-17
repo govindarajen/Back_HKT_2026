@@ -1,6 +1,8 @@
 var jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const dotenv = require('dotenv');
+const mongoose = require('mongoose');
+
 
 const User = require('../models/user.js');
 const { get } = require('mongoose');
@@ -27,7 +29,8 @@ module.exports = {
                 { 
                     id: user._id, username: user.username, 
                     fullName: user.fullName,
-                    groupId: user.groupId
+                    groupId: user.groupId,
+                    enterpriseId: user.enterpriseId
                 }, 
                 process.env.JWT_SECRET,
                 { expiresIn: process.env.JWT_EXPIRES_IN } 
@@ -54,12 +57,13 @@ module.exports = {
     },
 
     register: async function(req, res, next) {
-        const { fullName, username, password } = req.body;
+        const { fullName, username, password, role } = req.body;
         if (!fullName || !username || !password) {
             return res.status(400).json({ result: false, error: "Full name, username, and password are required" });
         };
 
         const hash = await bcrypt.hash(password, 10);
+        const isEmployee = role === 'employee';
 
         User.findOne({ username: username })
             .populate('groupId')
@@ -72,7 +76,8 @@ module.exports = {
                 username: username.toLowerCase(),
                 fullName,
                 password: hash,
-                createAt
+                createAt,
+                groupId: isEmployee ? new mongoose.Types.ObjectId(process.env.ID_GROUP_DEFAULT) : new mongoose.Types.ObjectId(process.env.ID_GROUP_OWNER)
             });
 
             newUser.save().then((savedUser) => {
@@ -217,27 +222,73 @@ module.exports = {
         const userBy = res.locals.user.id;
 
         const { userId, fields } = req.body;
+        const requesterRights = res.locals.user?.groupId?.rights || [];
+        const hasAdminAccess = checkRights(res.locals.user, userId);
+        const hasEnterpriseManageRights = requesterRights.includes('enterprise_w') || requesterRights.includes('enterprise_c');
+
+        const performUpdate = () => {
+            User.findByIdAndUpdate({ _id: userId }, {
+                ...fields,
+                updatedBy: userBy,
+                updatedAt: new Date()
+            }, { new: true }).populate('groupId').then(user => {
+                if (!user) {
+                    return res.status(404).json({ result: false, message: 'User not found' });
+                }
+                const userWithoutPassword = user.toObject();
+                delete userWithoutPassword.password;
+
+                return res.status(200).json({ result: true, user: userWithoutPassword });
+            }).catch(err => {
+                console.error('Error updating user:', err);
+                return res.status(500).json({ result: false, message: 'Internal server error' });
+            });
+        };
 
         if (!userId) {
             return res.status(400).json({ result: false, message: 'User ID are required' });
-        } else if (!checkRights(res.locals.user, userId)) {
+        } else if (!hasAdminAccess && !hasEnterpriseManageRights) {
             return res.status(403).json({ result: false, message: 'Forbidden' });
         }
 
-        User.findByIdAndUpdate({ _id: userId }, {
-            ...fields,
-            updatedBy: userBy,
-            updatedAt: new Date()
-        }).populate('groupId').then(user => {
-            if (!user) {
-                return res.status(404).json({ result: false, message: 'User not found' });
-            }
-            // Remove password from response
-            const userWithoutPassword = user.toObject();
-            delete userWithoutPassword.password;
+        if (!hasAdminAccess && hasEnterpriseManageRights) {
+            const fieldKeys = Object.keys(fields || {});
+            const targetEnterpriseId = fields?.enterpriseId;
 
-            return res.status(200).json({ result: true, user: userWithoutPassword });
-        })
+            if (fieldKeys.length !== 1 || fieldKeys[0] !== 'enterpriseId') {
+                return res.status(403).json({ result: false, message: 'Forbidden' });
+            }
+
+            return Promise.all([
+                User.findById(userBy, { enterpriseId: 1 }),
+                User.findById(userId, { enterpriseId: 1 })
+            ]).then(([requesterUser, targetUser]) => {
+                if (!requesterUser || !targetUser || !requesterUser.enterpriseId) {
+                    return res.status(403).json({ result: false, message: 'Forbidden' });
+                }
+
+                const requesterEnterpriseId = requesterUser.enterpriseId;
+                const targetCurrentEnterpriseId = targetUser.enterpriseId;
+
+                if (targetEnterpriseId === null) {
+                    if (String(targetCurrentEnterpriseId || '') !== String(requesterEnterpriseId)) {
+                        return res.status(403).json({ result: false, message: 'Forbidden' });
+                    }
+                    return performUpdate();
+                }
+
+                if (String(targetEnterpriseId || '') !== String(requesterEnterpriseId)) {
+                    return res.status(403).json({ result: false, message: 'Forbidden' });
+                }
+
+                return performUpdate();
+            }).catch(err => {
+                console.error('Error validating enterprise rights:', err);
+                return res.status(500).json({ result: false, message: 'Internal server error' });
+            });
+        }
+
+        return performUpdate();
 
     },
 

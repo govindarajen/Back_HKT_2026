@@ -27,6 +27,10 @@ const userSchema = new mongoose.Schema({
     required: true,
     minlength: 6,
   },
+  enterpriseId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'enterprises',
+  },
   IsBan: {
     type: Boolean,
     default: false,
