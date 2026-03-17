@@ -269,7 +269,8 @@ async function uploadFile({ file, body, user }) {
       return reject(new Error('No file provided'));
     }
 
-  const docType = resolveDocumentType(file, body);
+    try {
+      const docType = body?.type || 'autre';
 
       const fileId = await uploadBufferToGridFS(file.originalname, file.buffer, file.mimetype, { uploadedBy: user?.id });
 
@@ -281,7 +282,7 @@ async function uploadFile({ file, body, user }) {
         uploadDate: new Date(),
         fileUrl: fileId.toString(),
         metadata: { originalname: file.originalname, mimetype: file.mimetype, size: file.size },
-    enterpriseId: user?.enterpriseId,
+        enterpriseId: user?.enterpriseId,
         status: 'queued'
       });
       await rawDoc.save();
@@ -410,7 +411,8 @@ async function uploadFile({ file, body, user }) {
           cleanId: cleanDoc._id,
           documentType: docType,
           siret: siretValue,
-          client: entrepriseName,
+          MyEntreprise: entrepriseName,
+          client: clientName,
           address: parsed.address,
           tva: tvaVal,
           montantHT: montantHT,
