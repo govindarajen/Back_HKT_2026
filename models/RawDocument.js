@@ -8,6 +8,7 @@ const RawDocumentSchema = new mongoose.Schema({
     default: 'autre'
   },
   uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'users', index: true }, 
+  enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'enterprises', index: true },
   uploadedBySnapshot: {
     username: String,
     fullName: String
