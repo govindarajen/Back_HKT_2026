@@ -5,6 +5,8 @@ const documentsService = require('../services/documentsService');
 const RawDocument = require('../models/RawDocument');
 const CleanDocument = require('../models/CleanDocument');
 const CuratedDocument = require('../models/CuratedDocument');
+const Enterprise = require('../models/enterprise');
+const User = require('../models/user');
 
 const router = express.Router();
 const storage = multer.memoryStorage();
@@ -62,8 +64,12 @@ router.post('/reprocess/:rawId', checkAuthentication, async (req, res) => {
 
 // GET /raw - list all raw documents
 router.get('/raw', checkAuthentication, async (req, res) => {
+  const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
+
+  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+
   try {
-    const docs = await RawDocument.find().sort({ uploadDate: -1 }).limit(100);
+    const docs = await RawDocument.find(find).sort({ uploadDate: -1 }).limit(100);
     return res.json(docs);
   } catch (err) {
     console.error('list raw docs error', err);
@@ -73,8 +79,13 @@ router.get('/raw', checkAuthentication, async (req, res) => {
 
 // GET /clean - list all clean documents
 router.get('/clean', checkAuthentication, async (req, res) => {
+  const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
+
+  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+
+
   try {
-    const docs = await CleanDocument.find().sort({ extractionDate: -1 }).limit(100);
+    const docs = await CleanDocument.find(find).sort({ extractionDate: -1 }).limit(100);
     return res.json(docs);
   } catch (err) {
     console.error('list clean docs error', err);
@@ -84,8 +95,13 @@ router.get('/clean', checkAuthentication, async (req, res) => {
 
 // GET /curated - list all curated documents
 router.get('/curated', checkAuthentication, async (req, res) => {
+  const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
+
+  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+
+
   try {
-    const docs = await CuratedDocument.find().sort({ validationDate: -1 }).limit(100);
+    const docs = await CuratedDocument.find(find).sort({ validationDate: -1 }).limit(100);
     return res.json(docs);
   } catch (err) {
     console.error('list curated docs error', err);
