@@ -10,8 +10,8 @@ const CuratedDocumentSchema = new mongoose.Schema({
     default: 'autre'
   },
   siret: String,
-  nomEntreprise: String,
-  fournisseur: String,
+  MyEntreprise: String,
+  client: String,
   // structured address for the company/supplier
   address: {
     full: String, // full raw address line
