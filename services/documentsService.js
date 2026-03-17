@@ -6,6 +6,41 @@ const os = require('os');
 
 const RawDocument = require('../models/RawDocument');
 const CleanDocument = require('../models/CleanDocument');
+
+const ALLOWED_DOCUMENT_TYPES = new Set([
+  'facture_fournisseur',
+  'devis',
+  'attestation_siret',
+  'attestation_urssaf',
+  'extrait_kbis',
+  'rib',
+  'autre',
+]);
+
+const DOCUMENT_TYPE_ALIASES = {
+  facture: 'facture_fournisseur',
+  attestation: 'attestation_urssaf',
+  file: null,
+  files: null,
+};
+
+function resolveDocumentType(file, body) {
+  const candidates = [];
+
+  if (body?.type) candidates.push(body.type);
+  if (body?.documentType) candidates.push(body.documentType);
+  if (file?.fieldname) candidates.push(file.fieldname);
+
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const normalized = DOCUMENT_TYPE_ALIASES[candidate] ?? candidate;
+    if (normalized && ALLOWED_DOCUMENT_TYPES.has(normalized)) {
+      return normalized;
+    }
+  }
+
+  return 'autre';
+}
 const CuratedDocument = require('../models/CuratedDocument');
 
 // Helper: parse date string in DD/MM/YYYY format to Date object
@@ -234,8 +269,7 @@ async function uploadFile({ file, body, user }) {
       return reject(new Error('No file provided'));
     }
 
-    try {
-      const docType = body?.type || 'autre';
+  const docType = resolveDocumentType(file, body);
 
       const fileId = await uploadBufferToGridFS(file.originalname, file.buffer, file.mimetype, { uploadedBy: user?.id });
 
@@ -247,6 +281,7 @@ async function uploadFile({ file, body, user }) {
         uploadDate: new Date(),
         fileUrl: fileId.toString(),
         metadata: { originalname: file.originalname, mimetype: file.mimetype, size: file.size },
+    enterpriseId: user?.enterpriseId,
         status: 'queued'
       });
       await rawDoc.save();
