@@ -137,4 +137,87 @@ router.get('/curated/:id', checkAuthentication, async (req, res) => {
   }
 });
 
+router.patch('/:docType/:id/status', checkAuthentication, async (req, res) => {
+  try {
+    const { docType, id } = req.params;
+    const { status } = req.body;
+    const requesterId = res.locals?.user?.id;
+
+    const allowedStatuses = ['queued', 'processing', 'processed', 'needs_validation', 'validated', 'rejected'];
+    if (!allowedStatuses.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
+    }
+
+    const modelMap = {
+      raw: RawDocument,
+      clean: CleanDocument,
+      curated: CuratedDocument,
+    };
+
+    const Model = modelMap[docType];
+    if (!Model) {
+      return res.status(400).json({ error: 'Invalid document type' });
+    }
+
+    const document = await Model.findById(id);
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    let enterpriseId = document.enterpriseId || null;
+
+    if (docType === 'curated') {
+      if (!document.cleanId) {
+        return res.status(400).json({ error: 'Curated document is not linked to a clean document' });
+      }
+
+      const cleanDocument = await CleanDocument.findById(document.cleanId).select('enterpriseId');
+      enterpriseId = cleanDocument?.enterpriseId || null;
+    }
+
+    if (docType === 'raw') {
+      if (!document.uploadedBy) {
+        return res.status(400).json({ error: 'Raw document has no uploader reference' });
+      }
+
+      const uploader = await User.findById(document.uploadedBy).select('enterpriseId');
+      enterpriseId = uploader?.enterpriseId || null;
+    }
+
+    if (!enterpriseId) {
+      return res.status(400).json({ error: 'No enterprise linked to this document' });
+    }
+
+    const enterprise = await Enterprise.findById(enterpriseId).select('ownerId');
+    if (!enterprise) {
+      return res.status(404).json({ error: 'Enterprise not found' });
+    }
+
+    if (String(enterprise.ownerId) !== String(requesterId)) {
+      return res.status(403).json({ error: 'Only the enterprise owner can update status' });
+    }
+
+    document.status = status;
+    document.processingHistory = document.processingHistory || [];
+    document.processingHistory.push({ step: 'manual_status_update', status, ts: new Date() });
+
+    if (docType === 'curated') {
+      if (status === 'validated') {
+        document.validated = true;
+        document.validationDate = new Date();
+      }
+      if (status === 'rejected') {
+        document.validated = false;
+      }
+    }
+
+    await document.save();
+
+    return res.status(200).json({ result: true, document });
+  } catch (err) {
+    console.error('update status route error', err);
+    return res.status(500).json({ error: 'Failed to update document status' });
+  }
+});
+
 module.exports = router;
