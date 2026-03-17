@@ -82,9 +82,10 @@ router.get('/clean', checkAuthentication, async (req, res) => {
 
   const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
 
-
   try {
-    const docs = await CleanDocument.find(find).sort({ extractionDate: -1 }).limit(100);
+    const docs = await CleanDocument.find(find)
+    .populate('rawId', 'filename type uploadDate')
+    .sort({ extractionDate: -1 }).limit(100);
     return res.json(docs);
   } catch (err) {
     console.error('list clean docs error', err);
@@ -97,7 +98,6 @@ router.get('/curated', checkAuthentication, async (req, res) => {
   const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
 
   const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
-
 
   try {
     const docs = await CuratedDocument.find(find).sort({ validationDate: -1 }).limit(100);

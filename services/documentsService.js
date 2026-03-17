@@ -199,6 +199,7 @@ async function uploadFile({ file, body, user }) {
     uploadDate: new Date(),
     fileUrl: fileId.toString(),
     metadata: { originalname: file.originalname, mimetype: file.mimetype, size: file.size },
+    enterpriseId: user?.enterpriseId,
     status: 'queued'
   });
 

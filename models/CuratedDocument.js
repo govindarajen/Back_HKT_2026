@@ -10,7 +10,7 @@ const CuratedDocumentSchema = new mongoose.Schema({
     default: 'autre'
   },
   siret: String,
-  MyEntreprise: String,
+  enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'enterprises', index: true },
   client: String,
   // structured address for the company/supplier
   address: {
@@ -39,5 +39,5 @@ const CuratedDocumentSchema = new mongoose.Schema({
   },
   processingHistory: [{ step: String, status: String, workerId: String, message: String, ts: { type: Date, default: Date.now } }]
 });
-
-module.exports = mongoose.model('CuratedDocument', CuratedDocumentSchema);
+const CuratedDocument = mongoose.model('CuratedDocument', CuratedDocumentSchema);
+module.exports = CuratedDocument;

@@ -40,7 +40,6 @@ function checkAuthentication(req, res, next) {
                     groupId: decoded.groupId,
                     enterpriseId: decoded.enterpriseId
                 }; // Store user info in res.locals
-                
                 return next();
             }
         } catch (error) {
