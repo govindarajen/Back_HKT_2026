@@ -106,7 +106,7 @@ async function uploadFile({ file, body, user }) {
 
   const ocrText = await performOcrOnBuffer(file.buffer, file.mimetype);
 
-  const cleanDoc = new CleanDocument({ rawId: rawDoc._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: res.locals.user.enterpriseId });
+  const cleanDoc = new CleanDocument({ rawId: rawDoc._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: user?.enterpriseId });
   await cleanDoc.save();
 
   rawDoc.status = 'processed';
@@ -124,7 +124,7 @@ function getDownloadStreamById(fileId) {
   return bucket.openDownloadStream(_id);
 }
 
-async function reprocessRaw(rawId) {
+async function reprocessRaw(rawId, user) {
   const raw = await RawDocument.findById(rawId);
   if (!raw) throw new Error('RawDocument not found');
   if (!raw.fileUrl) throw new Error('No file reference in RawDocument');
@@ -148,7 +148,7 @@ async function reprocessRaw(rawId) {
 
   const cleanDoc = await CleanDocument.findOneAndUpdate(
     { rawId: raw._id },
-    { rawId: raw._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: res.locals.user.enterpriseId },
+    { rawId: raw._id, ocrText, jsonExtracted: {}, extractionDate: new Date(), status: 'processed', enterpriseId: user?.enterpriseId },
     { upsert: true, new: true, setDefaultsOnInsert: true }
   );
 
