@@ -11,15 +11,14 @@ const storage = multer.memoryStorage();
 // allow multiple file fields from the front (e.g. key 'file' per foreach or 'files' array)
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024, files: 10 } }); // 50MB per file, max 10 files
 
-// POST /upload - accept files from any form key (support front sending files one-by-one or as an array)
+// POST /upload 
 router.post('/upload', checkAuthentication, upload.any(), async (req, res) => {
   try {
-    // multer.any() populates req.files as an array for any field name
+    
     const files = (req.files && req.files.length) ? req.files : [];
     if (!files || files.length === 0) return res.status(400).json({ error: 'No files provided' });
 
     const results = [];
-    // Process files sequentially to avoid saturating CPU/memory; could be parallel with throttling
     for (const file of files) {
       const result = await documentsService.uploadFile({ file, body: req.body, user: res.locals.user });
       results.push(result);
