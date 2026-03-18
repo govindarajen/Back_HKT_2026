@@ -4,13 +4,18 @@ const mongoose = require('mongoose');
 const CuratedDocumentSchema = new mongoose.Schema({
   rawId: { type: mongoose.Schema.Types.ObjectId, ref: 'RawDocument' },
   cleanId: { type: mongoose.Schema.Types.ObjectId, ref: 'CleanDocument' },
-  documentType: {
+  detectedType: {
     type: String,
-    enum: ['facture_fournisseur','devis','attestation_siret','attestation_urssaf','extrait_kbis','rib','autre'],
-    default: 'autre'
+    enum: ['facture', 'devis', 'urssaf', 'siret', 'kbis', 'inconnu'],
+    default: 'inconnu'
+  },
+  numeroDocument: {
+    numero: String,      // ex: "FAC-0001-2025"
+    ref: String          // ex: "0001-2025" (clé de liaison)
   },
   siret: String,
   enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'enterprises', index: true },
+  MyEntreprise: String,
   client: String,
   // structured address for the company/supplier
   address: {

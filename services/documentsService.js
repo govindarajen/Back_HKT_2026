@@ -394,31 +394,40 @@ async function uploadFile({ file, body, user }) {
         // Extract dates from dates array
         let dateEmission = null;
         let dateEcheance = null;
+        let dateExpiration = null;
         if (Array.isArray(parsed.dates) && parsed.dates.length > 0) {
           for (const d of parsed.dates) {
             const label = (d.label || '').toLowerCase();
             if (label.includes('emission') && !dateEmission) {
               dateEmission = parseDateString(d.date);
-            } else if ((label.includes('echeance') || label.includes('échéance')) && !dateEcheance) {
+            } else if ((label.includes('echeance') || label.includes('échéance') || label.includes('valable jusqu')) && !dateEcheance) {
               dateEcheance = parseDateString(d.date);
+            } else if ((label.includes('expiration') || label.includes('date d\'expiration')) && !dateExpiration) {
+              dateExpiration = parseDateString(d.date);
             }
           }
         }
+
+        // Extract detected document type and numero
+        const detectedType = parsed.detectedType || 'inconnu';
+        const numeroDocument = parsed.numeroDocument || null;
 
         const curated = new CuratedDocument({
           rawId: rawDoc._id,
           enterpriseId: user?.enterpriseId,
           cleanId: cleanDoc._id,
           documentType: docType,
+          detectedType: detectedType,
+          numeroDocument: numeroDocument,
           siret: siretValue,
-          MyEntreprise: entrepriseName,
-          client: clientName,
+          client: entrepriseName,
           address: parsed.address,
           tva: tvaVal,
           montantHT: montantHT,
           montantTTC: montantTTC,
           dateEmission: dateEmission,
           dateEcheance: dateEcheance,
+          dateExpiration: dateExpiration,
           modePaiement: parsed.mode_paiement,
           status: 'needs_validation',
         });

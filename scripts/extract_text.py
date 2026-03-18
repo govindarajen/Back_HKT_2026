@@ -49,6 +49,9 @@ def main():
         'societes': extraction_data.extract_soc(text),
         'statut_siret': extraction_data.extract_statut_siret(text),
         'mode_paiement': extraction_data.extract_payment_method(text),
+        'address': extraction_data.extract_address(text),
+        'detectedType': extraction_data.detect_type(text),
+        'numeroDocument': extraction_data.extract_numero_document(text),
     }
 
     print(json.dumps(out, ensure_ascii=False))
