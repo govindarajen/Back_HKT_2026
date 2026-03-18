@@ -50,6 +50,7 @@ const CuratedDocumentSchema = new mongoose.Schema({
   validatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   validated: { type: Boolean, default: false },
   validationDate: Date,
+  createdAt: { type: Date, default: Date.now },
   status: {
     type: String,
     enum: ['queued','processing','processed','needs_validation','validated','rejected'],
