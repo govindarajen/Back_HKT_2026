@@ -34,15 +34,49 @@ router.post('/upload', checkAuthentication, upload.any(), async (req, res) => {
 });
 
 // GET /raw/:id - stream file from GridFS
-router.get('/raw/:id', async (req, res) => {
+// GET /raw/:id - stream file for preview or download
+router.get('/raw/:id', checkAuthentication, async (req, res) => {
   try {
     const id = req.params.id;
     if (!id) return res.status(400).json({ error: 'Missing id' });
-    const downloadStream = documentsService.getDownloadStreamById(id);
-    downloadStream.on('error', (err) => {
-      res.status(404).json({ error: 'File not found' });
-    });
-    downloadStream.pipe(res);
+
+    // Find the document metadata to get filename and mimetype
+    const doc = await RawDocument.findById(id);
+    if (!doc) return res.status(404).json({ error: 'File not found' });
+
+    // Check if fileUrl exists (GridFS file reference)
+    if (!doc.fileUrl) {
+      return res.status(404).json({ error: 'File reference not found' });
+    }
+
+    // Set headers for preview or download
+    const disposition = req.query.download === 'true'
+      ? `attachment; filename="${doc.filename || 'file'}"`
+      : `inline; filename="${doc.filename || 'file'}"`;
+
+    res.setHeader('Content-Disposition', disposition);
+    res.setHeader('Content-Type', doc.metadata?.mimetype || doc.mimetype || 'application/octet-stream');
+
+    try {
+      // Pass fileUrl (GridFS file ID) instead of document ID
+      const downloadStream = documentsService.getDownloadStreamById(doc.fileUrl);
+      
+      downloadStream.on('error', (err) => {
+        console.error('Stream error:', err);
+        if (!res.headersSent) {
+          res.status(500).json({ error: 'Failed to stream file' });
+        }
+      });
+
+      downloadStream.on('end', () => {
+        res.end();
+      });
+
+      downloadStream.pipe(res);
+    } catch (streamErr) {
+      console.error('Stream creation error:', streamErr);
+      return res.status(404).json({ error: 'File not found in storage' });
+    }
   } catch (err) {
     console.error('stream route error', err);
     res.status(500).json({ error: 'Failed to stream file' });
