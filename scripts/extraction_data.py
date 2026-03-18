@@ -250,3 +250,48 @@ def extract_address(text: str) -> dict:
             return {'full': full, 'street': street, 'postalCode': postal, 'city': city}
 
     return {}
+
+
+def detect_type(text: str) -> str:
+    """
+    Détecte le type de document à partir du texte OCR.
+    Retourne: "facture", "devis", "urssaf", "siret", "kbis" ou "inconnu"
+    """
+    t = text.lower()
+
+    if "facture n" in t and "fac-" in t:
+        return "facture"
+    if "devis n" in t and "dev-" in t:
+        return "devis"
+    if "attestation de vigilance" in t:
+        return "urssaf"
+    if "attestation d'immatriculation" in t:
+        return "siret"
+    if "extrait k-bis" in t:
+        return "kbis"
+    return "inconnu"
+
+
+def extract_numero_document(text: str) -> dict:
+    """
+    Extrait le numéro complet ET la ref courte pour la liaison facture <-> devis.
+    Retourne un dict avec:
+      - "numero": numéro complet (ex: "FAC-0001-2025")
+      - "ref": clé de liaison courte (ex: "0001-2025")
+    Retourne None si non trouvé.
+    """
+    t = text.lower()
+
+    match = re.search(r'(fac|dev)-(\d{4}-\d{4})', t)
+    if match:
+        prefix    = match.group(1).upper()   # "FAC" ou "DEV"
+        ref_court = match.group(2)           # "0001-2025"
+        numero    = f"{prefix}-{ref_court}"  # "FAC-0001-2025"
+
+        return {
+            "numero":   numero,      # numéro complet
+            "ref":      ref_court    # clé de liaison
+        }
+
+    return None
+
