@@ -32,10 +32,24 @@ const CuratedDocumentSchema = new mongoose.Schema({
   dateEcheance: Date, // date d'échéance / échéance de paiement
   dateExpiration: Date, // pour attestation
   modePaiement: String, // ex: 'Virement', 'CB', 'Chèque'
-  anomalies: [String], // ex: "TVA incohérente", "SIRET différent"
+  anomalies: [new mongoose.Schema({
+    type: String,          // ex: "SIRET_MISMATCH", "MONTANT_DEPASSE", "DEVIS_EXPIRE"
+    severity: String,      // "INFO", "AVERTISSEMENT", "CRITIQUE"
+    message: String,       // message utilisateur
+    linkedDocId: { type: mongoose.Schema.Types.ObjectId, ref: 'CuratedDocument' },
+    linkedDocType: String, // type du document lié
+    details: mongoose.Schema.Types.Mixed // données additionnelles
+  }, { _id: false })],
+  validationStatus: {
+    type: String,
+    enum: ['valid', 'invalid', 'pending'],
+    default: 'pending'   // valid: pas d'anomalies, invalid: anomalies détectées, pending: pas encore vérifié
+  },
+  validationMessage: String, // ex: "✓ Aucune anomalie détectée"
+  validatedAt: Date,
+  validatedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   validated: { type: Boolean, default: false },
-  validationDate: Date
-  ,
+  validationDate: Date,
   status: {
     type: String,
     enum: ['queued','processing','processed','needs_validation','validated','rejected'],
