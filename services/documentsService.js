@@ -122,6 +122,111 @@ function parseAmountString(str) {
   return null;
 }
 
+/**
+ * Check and create anomalies for a curated document
+ * Uses Python script check_anomalie.py to compare with related documents by SIRET
+ */
+async function checkAndCreateAnomalies(curatedDoc, enterpriseId) {
+  return new Promise(async (resolve) => {
+    if (!curatedDoc.siret) {
+      return resolve([]); // Can't check without SIRET
+    }
+
+    try {
+      // Instead of having Python query MongoDB, fetch documents here where we have full access
+      const relatedDocs = await CuratedDocument.find({ 
+        siret: curatedDoc.siret,
+        enterpriseId: curatedDoc.enterpriseId 
+      });
+
+      if (relatedDocs.length === 0) {
+        console.log('[AnomalyCheck] No related documents found for SIRET:', curatedDoc.siret);
+        return resolve([]);
+      }
+
+      console.log(`[AnomalyCheck] Found ${relatedDocs.length} documents for SIRET: ${curatedDoc.siret}`);
+
+      const anomalyScriptPath = path.join(__dirname, '../scripts/check_anomalie.py');
+      
+      let pythonExecutable = null;
+      const venvPython = path.join(__dirname, '..', '.venv', 'Scripts', 'python.exe');
+      if (fs.existsSync(venvPython)) {
+        pythonExecutable = venvPython;
+      } else {
+        try {
+          const wherePython = spawnSync(process.platform === 'win32' ? 'where' : 'which', ['python'], { encoding: 'utf8' });
+          if (wherePython.status === 0 && wherePython.stdout) {
+            pythonExecutable = wherePython.stdout.split(/\r?\n/)[0].trim();
+          }
+        } catch (e) {}
+        if (!pythonExecutable && process.platform === 'win32') {
+          try {
+            const wherePy = spawnSync('where', ['py'], { encoding: 'utf8' });
+            if (wherePy.status === 0 && wherePy.stdout) pythonExecutable = wherePy.stdout.split(/\r?\n/)[0].trim();
+          } catch (e) {}
+        }
+      }
+
+      if (!pythonExecutable) {
+        console.error('[AnomalyCheck] No python executable found.');
+        return resolve([]);
+      }
+
+      // Convert MongoDB documents to plain objects for JSON serialization
+      const docsForPython = relatedDocs.map(doc => ({
+        _id: doc._id.toString(),
+        detectedType: doc.detectedType,
+        siret: doc.siret,
+        numeroDocument: doc.numeroDocument,
+        montantTTC: doc.montantTTC,
+        montantHT: doc.montantHT,
+        dateEmission: doc.dateEmission,
+        dateEcheance: doc.dateEcheance,
+        dateExpiration: doc.dateExpiration
+      }));
+
+      const anomalyProc = spawn(pythonExecutable, [anomalyScriptPath, '--stdin'], { 
+        cwd: path.join(__dirname, '..'),
+        env: { ...process.env }
+      });
+      
+      let anomalyOut = '';
+      let anomalyErr = '';
+
+      anomalyProc.stdout.on('data', (d) => anomalyOut += d.toString('utf8'));
+      anomalyProc.stderr.on('data', (d) => anomalyErr += d.toString('utf8'));
+
+      anomalyProc.on('close', async (code) => {
+        if (code !== 0) {
+          console.error('[AnomalyCheck] Python script failed with code', code);
+          return resolve([]);
+        }
+
+        try {
+          const result = JSON.parse(anomalyOut);
+          
+          // Handle both old format (array) and new format (object with anomalies property)
+          let anomalies = Array.isArray(result) ? result : (result.anomalies || []);
+          
+          return resolve(anomalies);
+        } catch (e) {
+          console.error('[AnomalyCheck] JSON parse error:', e.message);
+          console.error('[AnomalyCheck] Raw output:', anomalyOut);
+          return resolve([]);
+        }
+      });
+
+      // Send the documents as JSON via stdin to the Python script
+      anomalyProc.stdin.write(JSON.stringify(docsForPython));
+      anomalyProc.stdin.end();
+
+    } catch (error) {
+      console.error('[AnomalyCheck] Error in checkAndCreateAnomalies:', error.message);
+      resolve([]);
+    }
+  });
+}
+
 async function uploadBufferToGridFS(filename, buffer, contentType, metadata = {}) {
   const db = mongoose.connection.db;
   const bucket = new mongoose.mongo.GridFSBucket(db, { bucketName: 'rawFiles' });
@@ -362,6 +467,13 @@ async function uploadFile({ file, body, user }) {
           for (const m of parsed.montants) {
             const label = (m.label || '').toLowerCase();
             const rawMontant = (m.montant !== undefined && m.montant !== null) ? String(m.montant).trim() : '';
+            
+            // Skip if rawMontant looks like a SIRET (space-separated groups of 3+ digits)
+            if (/^\d{3}(\s\d{3})+$/.test(rawMontant.replace(/\s/g, ''))) {
+              console.log(`[Extractor] Skipping probable SIRET in montant: ${rawMontant}`);
+              continue;
+            }
+            
             const value = parseAmountString(rawMontant);
             if (value == null) continue;
 
@@ -381,6 +493,11 @@ async function uploadFile({ file, body, user }) {
           siretValue = parsed.siret[0];
         } else if (typeof parsed.siret === 'string') {
           siretValue = parsed.siret;
+        }
+        
+        // Normalize SIRET by removing all spaces
+        if (siretValue) {
+          siretValue = siretValue.replace(/\s+/g, '');
         }
 
         // Get company names from societes array
@@ -434,12 +551,26 @@ async function uploadFile({ file, body, user }) {
 
         const savedCuratedDoc = await curated.save();
 
+        // --- Check for anomalies after document creation ---
+        const detectedAnomalies = await checkAndCreateAnomalies(savedCuratedDoc, user?.enterpriseId);
+        
+        // Update validation status based on anomalies
+        if (detectedAnomalies.length > 0) {
+          savedCuratedDoc.anomalies = detectedAnomalies;
+          savedCuratedDoc.validationStatus = 'invalid';
+          savedCuratedDoc.validationMessage = `${detectedAnomalies.length} anomalie(s) detectee(s)`;
+        } else {
+          savedCuratedDoc.validationStatus = 'valid';
+          savedCuratedDoc.validationMessage = 'Aucune anomalie detectee';
+        }
+        
+        savedCuratedDoc.validatedAt = new Date();
+        await savedCuratedDoc.save();
+
         rawDoc.status = 'processed';
         await rawDoc.save();
         cleanDoc.status = 'processed';
         await cleanDoc.save();
-
-        console.log('[Curator] Successfully created curated document', savedCuratedDoc._id);
         
         resolve({
           rawId: rawDoc._id,
@@ -575,5 +706,6 @@ module.exports = {
   performOcrOnBuffer,
   uploadBufferToGridFS,
   getDownloadStreamById,
-  reprocessRaw
+  reprocessRaw,
+  checkAndCreateAnomalies
 };
