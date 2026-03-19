@@ -1,0 +1,39 @@
+# =============================================================================
+# Dockerfile.backend
+# =============================================================================
+# Construit l'image Docker du backend Node.js
+# =============================================================================
+ 
+FROM node:20-slim
+ 
+# Installe Python + Tesseract + Poppler (nécessaires pour tes scripts OCR)
+RUN apt-get update && apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    tesseract-ocr \
+    tesseract-ocr-fra \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+ 
+# Installe les dépendances Python pour les scripts OCR
+RUN pip3 install --break-system-packages \
+    pytesseract \
+    Pillow \
+    pdf2image \
+    pymongo
+ 
+WORKDIR /app
+ 
+# Copie les fichiers de dépendances Node en premier (optimise le cache Docker)
+COPY package*.json ./
+ 
+# Installe les dépendances Node.js
+RUN npm install
+ 
+# Copie le reste du code
+COPY . .
+ 
+EXPOSE 3001
+ 
+CMD ["node", "server.js"]
