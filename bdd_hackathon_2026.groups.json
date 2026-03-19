@@ -1,0 +1,61 @@
+[{
+  "_id": {
+    "$oid": "1"
+  },
+  "lib": "Admin",
+  "rights": [
+    "home_r",
+    "dashboard_r",
+    "*"
+  ],
+  "updatedBy": "system",
+  "createdAt": {
+    "$date": "2026-03-16T13:30:39.579Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "1"
+  },
+  "lib": "User",
+  "rights": [
+    "home_r",
+    "dashboard_r",
+    "dashboard_r",
+    "document_upload",
+    "document_r",
+    "document_c",
+    "document_w",
+    "document_d",
+    "enterprise_r"
+  ],
+  "updatedBy": "system",
+  "createdAt": {
+    "$date": "2026-03-16T13:30:39.579Z"
+  }
+},
+{
+  "_id": {
+    "$oid": "1"
+  },
+  "lib": "Owner",
+  "rights": [
+    "home_r",
+    "dashboard_r",
+    "dashboard_r",
+    "document_upload",
+    "document_r",
+    "document_c",
+    "document_w",
+    "document_d",
+    "document_validation",
+    "enterprise_d",
+    "enterprise_r",
+    "enterprise_w",
+    "enterprise_c"
+  ],
+  "updatedBy": "system",
+  "createdAt": {
+    "$date": "2026-03-16T13:30:39.579Z"
+  }
+}]
