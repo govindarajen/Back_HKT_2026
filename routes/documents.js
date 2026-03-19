@@ -99,7 +99,10 @@ router.post('/reprocess/:rawId', checkAuthentication, async (req, res) => {
 router.get('/raw', checkAuthentication, async (req, res) => {
   const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
 
-  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+  const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
+
+  const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
+
 
   try {
     const docs = await RawDocument.find(find).sort({ uploadDate: -1 }).limit(100);
@@ -114,7 +117,10 @@ router.get('/raw', checkAuthentication, async (req, res) => {
 router.get('/clean', checkAuthentication, async (req, res) => {
   const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
 
-  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+  const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
+
+  const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
+
 
   try {
     const docs = await CleanDocument.find(find)
@@ -131,10 +137,14 @@ router.get('/clean', checkAuthentication, async (req, res) => {
 router.get('/curated', checkAuthentication, async (req, res) => {
   const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
 
-  const find = isAdmin ? {} : { enterpriseId: res.locals.user.enterpriseId }; // Admins see all, others see only their uploads
+  const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
+
+  const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
+
 
   try {
     const docs = await CuratedDocument.find(find).sort({ validationDate: -1 }).limit(100);
+    console.log('Curated documents found:', docs.length);
     return res.json(docs);
   } catch (err) {
     console.error('list curated docs error', err);
