@@ -81,17 +81,26 @@ module.exports = {
             });
 
             newUser.save().then((savedUser) => {
-                const token = jwt.sign(
-                    { 
-                        id: savedUser._id, username: savedUser.username, 
-                        fullName: savedUser.fullName,
-                        groupId: savedUser.groupId
-                    }, 
-                    process.env.JWT_SECRET,
-                    { expiresIn: process.env.JWT_EXPIRES_IN } 
-                    );
+                // Fetch the user again with populated groupId (to get rights)
+                User.findOne({ _id: savedUser._id })
+                    .populate('groupId')
+                    .then(populatedUser => {
+                        const token = jwt.sign(
+                            { 
+                                id: user._id, username: user.username, 
+                                fullName: user.fullName,
+                                groupId: user.groupId,
+                                enterpriseId: user.enterpriseId
+                            }, 
+                            process.env.JWT_SECRET,
+                            { expiresIn: process.env.JWT_EXPIRES_IN } 
+                        );
 
-                token && res.status(200).json({ result: true, token: token, user: {username: savedUser.username, fullName: savedUser.fullName} });
+                        const userWithoutPassword = populatedUser.toObject();
+                        delete userWithoutPassword.password;
+
+                        token && res.status(200).json({ result: true, token: token, user: userWithoutPassword });
+                    });
             })
         });
     },
