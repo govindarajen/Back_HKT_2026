@@ -157,7 +157,7 @@ router.get('/curated', checkAuthentication, async (req, res) => {
     });
   }
   try {
-    const docs = await CuratedDocument.find(find).sort({ validationDate: -1 }).limit(100);
+    const docs = await CuratedDocument.find(find).populate('rawId').sort({ validationDate: -1 }).limit(100);
     console.log('Curated documents found:', docs.length);
     return res.json(docs);
   } catch (err) {
