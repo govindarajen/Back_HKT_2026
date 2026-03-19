@@ -1,0 +1,9 @@
+FROM apache/airflow:2.9.3
+USER root
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    tesseract-ocr-fra \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
+USER airflow
+RUN pip install pytesseract Pillow pdf2image pymongo

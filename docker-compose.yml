@@ -1,4 +1,4 @@
-version: "3.8"
+#version: "3.8"
  
 services:
  
@@ -21,7 +21,9 @@ services:
  
   # ── Airflow Webserver ─────────────────────────────────────────────────────
   airflow-webserver:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,6 +33,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: "hkt2026secretkey"
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
       # pymongo pour que le DAG puisse se connecter à MongoDB Atlas
       _PIP_ADDITIONAL_REQUIREMENTS: "pymongo"
       # MONGO_URI passé depuis ton .env
@@ -49,7 +52,9 @@ services:
  
   # ── Airflow Scheduler ─────────────────────────────────────────────────────
   airflow-scheduler:
-    image: apache/airflow:2.9.3
+    build:
+      context: .
+      dockerfile: Dockerfile.airflow
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,6 +64,7 @@ services:
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: "hkt2026secretkey"
+      AIRFLOW__API__AUTH_BACKENDS: "airflow.api.auth.backend.basic_auth"
       _PIP_ADDITIONAL_REQUIREMENTS: "pymongo"
       MONGO_URI: ${MONGO_URI}
     volumes:

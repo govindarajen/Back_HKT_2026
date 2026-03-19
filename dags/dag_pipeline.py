@@ -1,217 +1,354 @@
 # =============================================================================
 # dags/dag_pipeline.py
 # =============================================================================
-# DAG Airflow qui orchestre le pipeline de traitement des documents.
+# DAG Airflow qui exécute le pipeline complet de traitement d'un document.
 #
-# Ce DAG se déclenche automatiquement toutes les minutes et vérifie si
-# des documents sont en attente de traitement dans MongoDB (statut "queued").
+# Déclenché par le backend Node.js via l'API REST Airflow à chaque upload.
+# Le backend passe le rawId du document en paramètre (conf).
 #
 # Pipeline :
-#   1. ingestion  → vérifie les documents en attente dans raw MongoDB
-#   2. ocr        → confirme que l'OCR a bien été fait (clean MongoDB)
-#   3. extraction → confirme que l'extraction est faite (curated MongoDB)
-#   4. validation → confirme que les anomalies ont été vérifiées
-#
-# Note : Le vrai traitement est fait par le backend Node.js.
-#        Ce DAG surveille et orchestre le flux, et peut relancer
-#        les étapes en cas d'échec.
+#   1. ingestion  → récupère le fichier depuis MongoDB GridFS
+#   2. ocr        → lance test_fct.py → sauvegarde CleanDocument
+#   3. extraction → lance extract_text.py → mapping → sauvegarde CuratedDocument
+#   4. validation → lance check_anomalie.py → met à jour les anomalies
 # =============================================================================
  
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime, timedelta
 from pymongo import MongoClient
+from bson import ObjectId
 import os
+import subprocess
+import tempfile
+import json
 import logging
  
 # ── Connexion MongoDB ─────────────────────────────────────────────────────────
-# MONGO_URI est passé via les variables d'environnement du docker-compose
 MONGO_URI = os.environ.get("MONGO_URI", "")
  
 def get_db():
-    """Retourne la connexion à la base MongoDB."""
     client = MongoClient(MONGO_URI)
-    return client["hackathon_2026"]  # remplace "test" par le nom de ta base si différent
+    db_name = MONGO_URI.split("/")[-1].split("?")[0] or "test"
+    return client[db_name]
+ 
+SCRIPTS_DIR = "/opt/airflow/scripts"
  
  
 # =============================================================================
 # TÂCHE 1 — INGESTION
-# Vérifie les documents bruts en attente dans la raw zone
+# Récupère le fichier depuis GridFS et le sauvegarde en fichier temporaire
 # =============================================================================
 def tache_ingestion(**context):
-    """
-    Récupère tous les RawDocuments avec statut 'queued'.
-    Passe leurs IDs à la tâche suivante via XCom.
-    XCom = système de communication entre tâches dans Airflow.
-    """
+    raw_id = context["dag_run"].conf.get("raw_id")
+    if not raw_id:
+        raise ValueError("[Ingestion] raw_id manquant dans conf !")
+ 
+    logging.info(f"[Ingestion] Traitement du document rawId: {raw_id}")
+ 
     db = get_db()
     raw_collection = db["rawdocuments"]
  
-    # Cherche tous les documents en attente
-    docs_en_attente = list(raw_collection.find(
-        {"status": "queued"},
-        {"_id": 1, "filename": 1}   # on ne récupère que l'ID et le nom
-    ))
+    raw_doc = raw_collection.find_one({"_id": ObjectId(raw_id)})
+    if not raw_doc:
+        raise ValueError(f"[Ingestion] RawDocument introuvable: {raw_id}")
  
-    if not docs_en_attente:
-        logging.info("[Ingestion] Aucun document en attente.")
-        return []
+    filename = raw_doc.get("filename", "document")
+    file_url = raw_doc.get("fileUrl")
+    mimetype = raw_doc.get("metadata", {}).get("mimetype", "application/pdf")
  
-    # Convertit les ObjectId en string pour la sérialisation XCom
-    ids = [str(doc["_id"]) for doc in docs_en_attente]
-    noms = [doc.get("filename", "inconnu") for doc in docs_en_attente]
+    # Télécharge le fichier depuis GridFS
+    import gridfs
+    client = MongoClient(MONGO_URI)
+    db_name = MONGO_URI.split("/")[-1].split("?")[0] or "test"
+    fs = gridfs.GridFS(client[db_name], collection="rawFiles")
+    file_data = fs.get(ObjectId(file_url)).read()
  
-    logging.info(f"[Ingestion] {len(ids)} document(s) en attente : {noms}")
+    # Sauvegarde dans un fichier temporaire
+    suffix = ".pdf" if "pdf" in mimetype else os.path.splitext(filename)[1] or ".pdf"
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+    tmp.write(file_data)
+    tmp.close()
  
-    # Retourne les IDs — Airflow les stocke automatiquement dans XCom
-    return ids
+    logging.info(f"[Ingestion] Fichier sauvegardé: {tmp.name} ({len(file_data)} bytes)")
+ 
+    raw_collection.update_one(
+        {"_id": ObjectId(raw_id)},
+        {"$set": {"status": "processing"}}
+    )
+ 
+    return {"tmp_path": tmp.name, "raw_id": raw_id, "filename": filename}
  
  
 # =============================================================================
 # TÂCHE 2 — OCR
-# Vérifie que chaque document raw a bien un CleanDocument associé
+# Lance test_fct.py → sauvegarde le CleanDocument
 # =============================================================================
 def tache_ocr(**context):
-    """
-    Pour chaque rawId récupéré en tâche 1,
-    vérifie qu'un CleanDocument (texte OCR) existe en base.
-    Si non → log une erreur (le backend devrait l'avoir créé).
-    """
-    # xcom_pull récupère le résultat retourné par la tâche 'ingestion'
-    raw_ids = context["ti"].xcom_pull(task_ids="ingestion")
+    ingestion_result = context["ti"].xcom_pull(task_ids="ingestion")
+    tmp_path = ingestion_result["tmp_path"]
+    raw_id   = ingestion_result["raw_id"]
  
-    if not raw_ids:
-        logging.info("[OCR] Aucun document à vérifier.")
-        return []
+    logging.info(f"[OCR] Lancement OCR sur: {tmp_path}")
  
+    output_path = tmp_path + "_ocr.txt"
+ 
+    result = subprocess.run(
+        ["python3", os.path.join(SCRIPTS_DIR, "test_fct.py"), tmp_path, "--save", output_path],
+        capture_output=True,
+        text=True
+    )
+ 
+    if result.returncode != 0:
+        raise RuntimeError(f"[OCR] Échec: {result.stderr}")
+ 
+    with open(output_path, "r", encoding="utf-8") as f:
+        ocr_text = f.read().strip()
+ 
+    # Nettoyage fichiers temporaires
+    os.unlink(tmp_path)
+    os.unlink(output_path)
+ 
+    logging.info(f"[OCR] Texte extrait: {len(ocr_text)} caractères")
+ 
+    # Sauvegarde le CleanDocument
     db = get_db()
-    clean_collection = db["cleandocuments"]
+    clean_result = db["cleandocuments"].insert_one({
+        "rawId":          ObjectId(raw_id),
+        "ocrText":        ocr_text,
+        "jsonExtracted":  {},
+        "extractionDate": datetime.now(),
+        "status":         "processed",
+    })
  
-    ids_ok = []
-    ids_ko = []
+    logging.info(f"[OCR] CleanDocument créé: {clean_result.inserted_id}")
  
-    for raw_id in raw_ids:
-        clean_doc = clean_collection.find_one({"rawId": raw_id})
-        if clean_doc and clean_doc.get("ocrText"):
-            ids_ok.append(raw_id)
-            logging.info(f"[OCR] {raw_id} → texte OCR présent ({len(clean_doc['ocrText'])} chars)")
-        else:
-            ids_ko.append(raw_id)
-            logging.warning(f"[OCR] {raw_id} → pas de texte OCR trouvé")
- 
-    logging.info(f"[OCR] Résultat : {len(ids_ok)} OK / {len(ids_ko)} manquants")
-    return ids_ok   # on passe uniquement les IDs OK à la tâche suivante
+    return {
+        "ocr_text": ocr_text,
+        "raw_id":   raw_id,
+        "clean_id": str(clean_result.inserted_id)
+    }
  
  
 # =============================================================================
 # TÂCHE 3 — EXTRACTION
-# Vérifie que chaque document a bien un CuratedDocument associé
+# Lance extract_text.py → mapping du JSON → sauvegarde le CuratedDocument
 # =============================================================================
 def tache_extraction(**context):
-    """
-    Pour chaque rawId avec OCR confirmé,
-    vérifie qu'un CuratedDocument (données extraites) existe en base.
-    """
-    ids_ocr_ok = context["ti"].xcom_pull(task_ids="ocr")
+    ocr_result = context["ti"].xcom_pull(task_ids="ocr")
+    ocr_text   = ocr_result["ocr_text"]
+    raw_id     = ocr_result["raw_id"]
+    clean_id   = ocr_result["clean_id"]
  
-    if not ids_ocr_ok:
-        logging.info("[Extraction] Aucun document à vérifier.")
-        return []
+    logging.info(f"[Extraction] Lancement sur {len(ocr_text)} chars")
+ 
+    # Lance extract_text.py — reçoit le texte OCR via stdin, retourne du JSON
+    result = subprocess.run(
+        ["python3", os.path.join(SCRIPTS_DIR, "extract_text.py")],
+        input=ocr_text,
+        capture_output=True,
+        text=True,
+        encoding="utf-8"
+    )
+ 
+    if result.returncode != 0:
+        raise RuntimeError(f"[Extraction] Échec: {result.stderr}")
+ 
+    parsed = json.loads(result.stdout)
+    logging.info(f"[Extraction] Type: {parsed.get('detectedType')} | SIRET: {parsed.get('siret')}")
+ 
+    # ── Mapping : format extract_text.py → format CuratedDocument ────────
+    # Le mapping est nécessaire car extract_text.py retourne des listes de dicts
+    # (ex: dates = [{"label": "Date d'emission", "date": "17/11/2025"}])
+    # alors que CuratedDocument attend des champs séparés (dateEmission, dateEcheance...)
  
     db = get_db()
-    curated_collection = db["curateddocuments"]
+    raw_doc       = db["rawdocuments"].find_one({"_id": ObjectId(raw_id)})
+    enterprise_id = raw_doc.get("enterpriseId") if raw_doc else None
  
-    ids_ok = []
-    ids_ko = []
+    # SIRET : extract_siret() retourne une liste → on prend le premier
+    siret_value = None
+    if parsed.get("siret"):
+        siret_value = parsed["siret"][0].replace(" ", "")
  
-    for raw_id in ids_ocr_ok:
-        curated_doc = curated_collection.find_one({"rawId": raw_id})
-        if curated_doc:
-            ids_ok.append(raw_id)
-            logging.info(f"[Extraction] {raw_id} → type détecté : {curated_doc.get('detectedType', 'inconnu')}")
-        else:
-            ids_ko.append(raw_id)
-            logging.warning(f"[Extraction] {raw_id} → pas de données extraites")
+    # Montants : extract_montants() retourne [{"label": ..., "montant": ...}]
+    # → on mappe sur montantHT, montantTTC, tva selon le label
+    montant_ht  = None
+    montant_ttc = None
+    tva_val     = None
+    for m in parsed.get("montants", []):
+        label = (m.get("label") or "").lower()
+        val   = m.get("montant")
+        if not val:
+            continue
+        try:
+            val_float = float(
+                str(val).replace(",", ".").replace(" ", "")
+                        .replace("€", "").replace("EUR", "")
+            )
+        except ValueError:
+            continue
+        if "ht" in label:
+            montant_ht = val_float
+        elif "ttc" in label:
+            montant_ttc = val_float
+        elif "tva" in label:
+            tva_val = val_float
  
-    logging.info(f"[Extraction] Résultat : {len(ids_ok)} OK / {len(ids_ko)} manquants")
-    return ids_ok
+    # Dates : extract_dates() retourne [{"label": ..., "date": "DD/MM/YYYY"}]
+    # → on mappe sur dateEmission, dateEcheance, dateExpiration selon le label
+    def parse_date(s):
+        if not s:
+            return None
+        for fmt in ("%d/%m/%Y", "%d-%m-%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(s, fmt)
+            except ValueError:
+                continue
+        return None
+ 
+    date_emission   = None
+    date_echeance   = None
+    date_expiration = None
+    for d in parsed.get("dates", []):
+        label = (d.get("label") or "").lower()
+        if "emission" in label and not date_emission:
+            date_emission = parse_date(d.get("date"))
+        elif ("echeance" in label or "valable" in label) and not date_echeance:
+            date_echeance = parse_date(d.get("date"))
+        elif "expiration" in label and not date_expiration:
+            date_expiration = parse_date(d.get("date"))
+ 
+    # ── Sauvegarde le CuratedDocument ────────────────────────────────────
+    curated_result = db["curateddocuments"].insert_one({
+        "rawId":          ObjectId(raw_id),
+        "cleanId":        ObjectId(clean_id),
+        "enterpriseId":   enterprise_id,
+        "detectedType":   parsed.get("detectedType", "inconnu"),
+        "numeroDocument": parsed.get("numeroDocument"),
+        "siret":          siret_value,
+        "montantHT":      montant_ht,
+        "montantTTC":     montant_ttc,
+        "tva":            tva_val,
+        "dateEmission":   date_emission,
+        "dateEcheance":   date_echeance,
+        "dateExpiration": date_expiration,
+        "modePaiement":   parsed.get("mode_paiement"),
+        "address":        parsed.get("address"),
+        "status":         "needs_validation",
+        "anomalies":      [],
+    })
+ 
+    curated_id = str(curated_result.inserted_id)
+    logging.info(f"[Extraction] CuratedDocument créé: {curated_id}")
+ 
+    return {
+        "curated_id": curated_id,
+        "raw_id":     raw_id,
+        "clean_id":   clean_id,
+        "siret":      siret_value,
+    }
  
  
 # =============================================================================
 # TÂCHE 4 — VALIDATION
-# Vérifie les anomalies et met à jour le statut final des documents
+# Lance check_anomalie.py → met à jour les anomalies sur le CuratedDocument
 # =============================================================================
 def tache_validation(**context):
-    """
-    Pour chaque document extrait avec succès :
-    - vérifie si des anomalies ont été détectées
-    - met à jour le statut du RawDocument à 'processed'
-    - log un résumé des anomalies trouvées
-    """
-    ids_extraction_ok = context["ti"].xcom_pull(task_ids="extraction")
- 
-    if not ids_extraction_ok:
-        logging.info("[Validation] Aucun document à valider.")
-        return
+    extraction_result = context["ti"].xcom_pull(task_ids="extraction")
+    curated_id = extraction_result["curated_id"]
+    raw_id     = extraction_result["raw_id"]
+    clean_id   = extraction_result["clean_id"]
+    siret      = extraction_result["siret"]
  
     db = get_db()
-    raw_collection     = db["rawdocuments"]
     curated_collection = db["curateddocuments"]
  
-    total_anomalies = 0
+    anomalies = []
  
-    for raw_id in ids_extraction_ok:
-        curated_doc = curated_collection.find_one({"rawId": raw_id})
+    if siret:
+        # Récupère tous les documents du même fournisseur (même SIRET)
+        related_docs = list(curated_collection.find({"siret": siret}))
  
-        if not curated_doc:
-            continue
+        # Sérialise pour check_anomalie.py (les dates doivent être des strings)
+        docs_for_python = [
+            {
+                "_id":            str(d["_id"]),
+                "detectedType":   d.get("detectedType"),
+                "siret":          d.get("siret"),
+                "numeroDocument": d.get("numeroDocument"),
+                "montantTTC":     d.get("montantTTC"),
+                "montantHT":      d.get("montantHT"),
+                "dateEmission":   d["dateEmission"].isoformat() if d.get("dateEmission") else None,
+                "dateEcheance":   d["dateEcheance"].isoformat() if d.get("dateEcheance") else None,
+                "dateExpiration": d["dateExpiration"].isoformat() if d.get("dateExpiration") else None,
+            }
+            for d in related_docs
+        ]
  
-        anomalies = curated_doc.get("anomalies", [])
-        statut    = curated_doc.get("validationStatus", "inconnu")
- 
-        if anomalies:
-            total_anomalies += len(anomalies)
-            logging.warning(
-                f"[Validation] {raw_id} → {len(anomalies)} anomalie(s) : "
-                f"{[a.get('type') for a in anomalies]}"
-            )
-        else:
-            logging.info(f"[Validation] {raw_id} → aucune anomalie (statut: {statut})")
- 
-        # Met à jour le statut du document raw à 'processed'
-        raw_collection.update_one(
-            {"_id": raw_id},
-            {"$set": {"status": "processed"}}
+        anomaly_result = subprocess.run(
+            ["python3", os.path.join(SCRIPTS_DIR, "check_anomalie.py"), "--stdin"],
+            input=json.dumps(docs_for_python),
+            capture_output=True,
+            text=True,
+            encoding="utf-8"
         )
  
-    logging.info(
-        f"[Validation] Pipeline terminé — "
-        f"{len(ids_extraction_ok)} document(s) traité(s), "
-        f"{total_anomalies} anomalie(s) au total."
+        if anomaly_result.returncode == 0:
+            try:
+                result_json = json.loads(anomaly_result.stdout)
+                anomalies = result_json if isinstance(result_json, list) else result_json.get("anomalies", [])
+            except json.JSONDecodeError:
+                logging.warning("[Validation] Impossible de parser les anomalies")
+        else:
+            logging.error(f"[Validation] check_anomalie.py erreur: {anomaly_result.stderr}")
+ 
+    # Met à jour le CuratedDocument avec les anomalies
+    validation_status = "invalid" if anomalies else "valid"
+    curated_collection.update_one(
+        {"_id": ObjectId(curated_id)},
+        {"$set": {
+            "anomalies":         anomalies,
+            "validationStatus":  validation_status,
+            "validationMessage": f"{len(anomalies)} anomalie(s) détectée(s)" if anomalies else "Aucune anomalie détectée",
+            "validatedAt":       datetime.now(),
+        }}
     )
+ 
+    # Met à jour les statuts raw et clean
+    db["rawdocuments"].update_one(
+        {"_id": ObjectId(raw_id)},
+        {"$set": {"status": "processed"}}
+    )
+    db["cleandocuments"].update_one(
+        {"_id": ObjectId(clean_id)},
+        {"$set": {"status": "processed"}}
+    )
+ 
+    logging.info(f"[Validation] {len(anomalies)} anomalie(s) — statut: {validation_status}")
+    logging.info(f"[Validation] Pipeline terminé pour rawId: {raw_id}")
  
  
 # =============================================================================
 # DÉFINITION DU DAG
 # =============================================================================
 with DAG(
-    dag_id="pipeline_documents",        # nom affiché dans l'interface Airflow
+    dag_id="pipeline_documents",
     description="Pipeline OCR et extraction de documents administratifs",
     start_date=datetime(2026, 1, 1),
-    schedule="* * * * *",               # toutes les minutes (cron expression)
-    catchup=False,                      # ne retraite pas les exécutions passées
+    schedule=None,       # déclenché par le backend via l'API REST Airflow
+    catchup=False,
     default_args={
-        "retries": 1,                   # 1 retry automatique en cas d'échec
+        "retries": 1,
         "retry_delay": timedelta(minutes=2),
     },
     tags=["hackathon", "documents", "ocr"],
 ) as dag:
  
-    # Définition des tâches
     ingestion  = PythonOperator(task_id="ingestion",  python_callable=tache_ingestion)
     ocr        = PythonOperator(task_id="ocr",        python_callable=tache_ocr)
     extraction = PythonOperator(task_id="extraction", python_callable=tache_extraction)
     validation = PythonOperator(task_id="validation", python_callable=tache_validation)
  
-    # Ordre d'exécution : chaque >> signifie "puis"
     ingestion >> ocr >> extraction >> validation
+ 
