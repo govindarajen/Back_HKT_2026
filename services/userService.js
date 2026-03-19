@@ -87,9 +87,10 @@ module.exports = {
                     .then(populatedUser => {
                         const token = jwt.sign(
                             { 
-                                id: populatedUser._id, username: populatedUser.username, 
-                                fullName: populatedUser.fullName,
-                                groupId: populatedUser.groupId
+                                id: user._id, username: user.username, 
+                                fullName: user.fullName,
+                                groupId: user.groupId,
+                                enterpriseId: user.enterpriseId
                             }, 
                             process.env.JWT_SECRET,
                             { expiresIn: process.env.JWT_EXPIRES_IN } 

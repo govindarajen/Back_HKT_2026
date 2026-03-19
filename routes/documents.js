@@ -102,7 +102,12 @@ router.get('/raw', checkAuthentication, async (req, res) => {
   const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
 
   const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
-
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
 
   try {
     const docs = await RawDocument.find(find).sort({ uploadDate: -1 }).limit(100);
@@ -120,7 +125,12 @@ router.get('/clean', checkAuthentication, async (req, res) => {
   const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
 
   const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
-
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
 
   try {
     const docs = await CleanDocument.find(find)
@@ -140,8 +150,12 @@ router.get('/curated', checkAuthentication, async (req, res) => {
   const enterpriseId = !isAdmin ? res.locals.user.enterpriseId : 0;
 
   const find = isAdmin ? {} : { enterpriseId: enterpriseId }; // Admins see all, others see only their uploads
-
-
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
   try {
     const docs = await CuratedDocument.find(find).sort({ validationDate: -1 }).limit(100);
     console.log('Curated documents found:', docs.length);

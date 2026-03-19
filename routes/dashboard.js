@@ -11,7 +11,12 @@ router.get('/stats', checkAuthentication, async (req, res) => {
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }   
     const stats = await dashboardService.getGlobalStats(enterpriseId);
     res.json({
       success: true,
@@ -34,7 +39,12 @@ router.get('/anomalies/severity', checkAuthentication, async (req, res) => {
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     const data = await dashboardService.getAnomaliesBySeverity(enterpriseId);
     res.json({
       success: true,
@@ -59,6 +69,13 @@ router.get('/anomalies/top', checkAuthentication, async (req, res) => {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
     const limit = req.query.limit || 10;
+
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }    
     
     const data = await dashboardService.getTopAnomalies(limit, enterpriseId);
     res.json({
@@ -82,6 +99,13 @@ router.get('/documents/by-type', checkAuthentication, async (req, res) => {
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
+
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     
     const data = await dashboardService.getDocumentsByType(enterpriseId);
     res.json({
@@ -105,7 +129,12 @@ router.get('/anomalies/by-document-type', checkAuthentication, async (req, res) 
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     const data = await dashboardService.getAnomaliesRateByDocType(enterpriseId);
     res.json({
       success: true,
@@ -130,7 +159,12 @@ router.get('/suppliers/at-risk', checkAuthentication, async (req, res) => {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
     const limit = req.query.limit || 10;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     const data = await dashboardService.getSuppliersAtRisk(limit, enterpriseId);
     res.json({
       success: true,
@@ -153,7 +187,12 @@ router.get('/validation/status', checkAuthentication, async (req, res) => {
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     const data = await dashboardService.getValidationStatus(enterpriseId);
     res.json({
       success: true,
@@ -176,7 +215,12 @@ router.get('/processing/status', checkAuthentication, async (req, res) => {
   try {
     const isAdmin = res.locals.user?.groupId?.rights?.includes('*');
     const enterpriseId = isAdmin ? null : res.locals.user?.enterpriseId;
-    
+  if (!enterpriseId) {
+    return res.json({
+      success: true,
+      data: []
+    });
+  }
     const data = await dashboardService.getProcessingStatus(enterpriseId);
     res.json({
       success: true,
