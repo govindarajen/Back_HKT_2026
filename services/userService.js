@@ -56,7 +56,7 @@ module.exports = {
         });
     },
 
-    register: async function(req, res, next) {
+    register: async function(req, res) {
         const { fullName, username, password, role } = req.body;
         if (!fullName || !username || !password) {
             return res.status(400).json({ result: false, error: "Full name, username, and password are required" });
@@ -87,10 +87,10 @@ module.exports = {
                     .then(populatedUser => {
                         const token = jwt.sign(
                             { 
-                                id: user._id, username: user.username, 
-                                fullName: user.fullName,
-                                groupId: user.groupId,
-                                enterpriseId: user.enterpriseId
+                                id: populatedUser._id, username: populatedUser.username, 
+                                fullName: populatedUser.fullName,
+                                groupId: populatedUser.groupId,
+                                enterpriseId: populatedUser.enterpriseId
                             }, 
                             process.env.JWT_SECRET,
                             { expiresIn: process.env.JWT_EXPIRES_IN } 
