@@ -41,6 +41,7 @@ const groupsRouter = require('./routes/groups')
 const documentsRouter = require('./routes/documents');
 const enterpriseRouter = require('./routes/enterprise')
 const membershipRequestsRouter = require('./routes/membershipRequests');
+const dashboardRouter = require('./routes/dashboard');
 
 
 
@@ -51,6 +52,7 @@ app.use( basePath + '/groups', groupsRouter);
 app.use( basePath + '/documents', documentsRouter);
 app.use( basePath + '/enterprises', enterpriseRouter);
 app.use( basePath + '/membership-requests', membershipRequestsRouter);
+app.use( basePath + '/dashboard', dashboardRouter);
 
 // API Test Route
 app.get('/api', (req, res) => {
