@@ -19,10 +19,25 @@ from PIL import Image
 from pdf2image import convert_from_path
 
 
+import subprocess
 
+def configure_tesseract():
+    """Auto-detect Tesseract installation."""
+    try:
+        # Try to find tesseract in PATH
+        result = subprocess.run(['which', 'tesseract'], capture_output=True, text=True)
+        if result.returncode == 0:
+            tesseract_path = result.stdout.strip()
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+            print(f"Found Tesseract at: {tesseract_path}")
+        else:
+            # Will use default PATH lookup
+            print("Using Tesseract from PATH")
+    except Exception as e:
+        print(f"Warning: Could not configure Tesseract path: {e}")
+        print("Will attempt to use Tesseract from PATH")
 
-pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-os.environ["TESSDATA_PREFIX"] = r"C:\Program Files\Tesseract-OCR\tessdata"
+configure_tesseract()
 
 # Detect Poppler (pdfinfo / pdftoppm) location so pdf2image can use it. This helps when
 # the script is run from environments that don't have Poppler in PATH (e.g. services spawned
